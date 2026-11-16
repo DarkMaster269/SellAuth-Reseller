@@ -1,0 +1,14 @@
+# resell-sellauth Variant to Supplier Mapping
+# Maps your SellAuth store variants to supplier variants.
+
+variants:
+  - our_variant_id: 2092559
+    our_product_id: 996063
+    name: "Discord Nitro 3 Months"
+    supplier_domain: "vna.mysellauth.com"
+    supplier_product_slug: "vna-3m-nitro"
+    supplier_variant_id: "variant_vna_nitro_3m"
+    min_margin_usd: "1.50"
+    max_price_usd: "10.00"
+    enabled: true
+

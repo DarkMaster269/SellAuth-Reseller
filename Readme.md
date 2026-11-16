@@ -1,0 +1,73 @@
+# resell-sellauth
+
+Automated reselling for SellAuth stores. Buyer pays on your store, a
+job buys the same item on a supplier's store, and the delivered items
+are attached to your buyer's invoice.
+
+Built to survive webhook retries, crashes, slow Litecoin confirmations,
+and supplier-side changes without ever buying twice or losing a paid
+order.
+
+## How it works (in one paragraph)
+
+SellAuth sends a webhook when a buyer pays. The webhook returns 200
+immediately (SellAuth times out after 10 seconds, so holding the
+connection open while waiting for LTC confirmations is impossible).
+A background job creates a checkout on the supplier's store, checks the
+price against a margin floor, pays in Litecoin from your wallet, waits
+for the supplier to confirm, fetches the delivered items, and calls
+SellAuth's `POST /invoices/{id}/deliver` to hand them to your buyer.
+Every state change is saved to SQLite before the next step, so a crash
+resumes instead of repeating.
+
+## Read these first (for Agents and Humans)
+
+1. `agents.md` — the behavior contract for the building agent.
+2. `detailed_implementation_plan.md` — the stage-by-stage plan.
+3. `HUMAN_CHECKS.md` — what only you can do.
+4. `files.md` — every file and why it exists.
+5. `TESTING.md` — how to test.
+6. `SECURITY.md` — what must never happen.
+7. `docs/findings.md` — the facts Stage 0 produced.
+
+## Quick start (local development)
+
+```bash
+# 1. Setup virtual environment
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+
+# 2. Install dependencies
+pip install -e .
+
+# 3. Setup environment variables
+cp .env.example .env
+# Open .env and fill in the fake/real values (never commit .env)
+
+# 4. Run tests (must pass before doing anything else)
+pytest
+
+# 5. Run the local dev server
+uvicorn resell.app:app --reload
+```
+
+## Status
+
+_(Update this section as you complete stages)_
+
+- **Current Stage:** 0 (Discovery)
+- **Tests:** Not yet written
+- **Deploy:** Not yet
+- **Last Updated:** {{Date}}
+
+## Non-goals (What this project will NOT do)
+
+- **No held-open webhooks.** SellAuth's 10s timeout makes them impossible.
+- **No hand-rolled Litecoin signing.** Electrum-LTC handles coin selection, fees, and signing.
+- **No auto-refunds** until SellAuth's refund API is confirmed in Stage 0.
+- **No auto price-sync** until a throwaway product test proves it is safe to update prices without blanking other product fields.
+
+## License
+
+The Altcha solver is reused from `DraxonV1/RESellAuth` (MIT). Keep the
+notice.
