@@ -21,6 +21,7 @@ class CreateOrderInput(BaseModel):
     email: str
     price_paid_usd: Decimal = Field(default=Decimal("0.00"))
     currency: str = "USD"
+    invoice_item_id: int | None = None
 
 
 class Order(BaseModel):
@@ -40,6 +41,7 @@ class Order(BaseModel):
     state: OrderState
     created_at: str
     updated_at: str
+    invoice_item_id: int | None = None
 
 
 class CreatePurchaseInput(BaseModel):

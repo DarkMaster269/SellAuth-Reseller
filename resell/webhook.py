@@ -10,7 +10,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from fastapi import APIRouter, Header, HTTPException, Request, Response
-from fastapi.responses import JSONResponse
+from fastapi.responses import PlainTextResponse
 
 from resell.config import MappingConfig, Settings
 from resell.jobs import JobRunnerProtocol
@@ -21,6 +21,12 @@ from resell.states import OrderState
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+FRIENDLY_DELIVERY_PLACEHOLDER = (
+    "Your Order has been Delivered! Please wait 10-15 minutes while we fetch your Product. "
+    "This page will automatically update once the order is fulfilled, and you will receive "
+    "an email with your items."
+)
 
 
 def compute_hmac(secret: str, raw_body: bytes) -> str:
@@ -89,6 +95,7 @@ def parse_webhook_payload(raw_body: bytes) -> dict[str, Any]:
     return {
         "invoice_id": int(invoice_id),
         "item_id": int(item_id),
+        "invoice_item_id": int(item_id),
         "product_id": int(product_id),
         "variant_id": int(variant_id),
         "quantity": int(quantity),
@@ -136,21 +143,37 @@ def create_webhook_handler(
             idempotency_key,
         )
 
-        # 3. Create order idempotently
-        order_input = CreateOrderInput(
-            invoice_id=invoice_id,
-            item_id=fields["item_id"],
-            product_id=fields["product_id"],
-            variant_id=variant_id,
-            quantity=fields["quantity"],
-            email=fields["email"],
-            price_paid_usd=fields["price_paid_usd"],
-            currency=fields["currency"],
-        )
-        order, created = repo.create_order_if_new(order_input)
+        # 3. Create order idempotently with graceful failure
+        order = None
+        created = False
+        try:
+            order_input = CreateOrderInput(
+                invoice_id=invoice_id,
+                item_id=fields["item_id"],
+                invoice_item_id=fields["invoice_item_id"],
+                product_id=fields["product_id"],
+                variant_id=variant_id,
+                quantity=fields["quantity"],
+                email=fields["email"],
+                price_paid_usd=fields["price_paid_usd"],
+                currency=fields["currency"],
+            )
+            order, created = repo.create_order_if_new(order_input)
+        except Exception as exc:
+            logger.error(
+                "Database error saving order for invoice_id=%d: %s",
+                invoice_id,
+                exc,
+                exc_info=True,
+            )
+            # Fail gracefully: buyer gets 200 OK placeholder instead of 500
+            return PlainTextResponse(
+                status_code=200,
+                content=FRIENDLY_DELIVERY_PLACEHOLDER,
+            )
 
         # 4. Check mapping & submit job
-        if created:
+        if created and order is not None:
             variant_map = mapping.get_variant(variant_id) if mapping else None
             if mapping and (variant_map is None or not variant_map.enabled):
                 # Fail-closed per SECURITY.md
@@ -166,21 +189,16 @@ def create_webhook_handler(
                 )
             else:
                 runner.submit(order.id)
-        else:
+        elif order is not None:
             logger.info(
                 "Duplicate webhook delivery for invoice_id=%d; existing order returned.",
                 invoice_id,
             )
 
-        # 5. Fast 200 OK reply to satisfy SellAuth 10s timeout
-        return JSONResponse(
+        # 5. Fast 200 OK reply to satisfy SellAuth 10s timeout with plain-text friendly placeholder
+        return PlainTextResponse(
             status_code=200,
-            content={
-                "status": "ok",
-                "delivered": "RECEIVED",
-                "order_id": order.id,
-                "state": order.state.value,
-            },
+            content=FRIENDLY_DELIVERY_PLACEHOLDER,
         )
 
     return webhook_router

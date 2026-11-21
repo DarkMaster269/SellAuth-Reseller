@@ -21,6 +21,7 @@ class SupplierAdapter(Protocol):
         product_slug: str,
         variant_id: str,
         quantity: int,
+        email: str = "test@example.com",
     ) -> CheckoutRef:
         """Create checkout invoice on supplier store and return payment details."""
         ...

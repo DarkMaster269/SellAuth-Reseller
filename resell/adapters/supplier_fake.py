@@ -35,6 +35,7 @@ class FakeSupplier:
         # State storage
         self.checkouts: dict[str, dict[str, Any]] = {}
         self.created_checkout_count = 0
+        self.last_checkout_email: str | None = None
         self._checkout_seq = 0
 
     async def list_variants(self, domain: str, product_slug: str) -> list[Variant]:
@@ -56,6 +57,7 @@ class FakeSupplier:
         product_slug: str,
         variant_id: str,
         quantity: int,
+        email: str = "test@example.com",
     ) -> CheckoutRef:
         """Create a mock checkout or raise error if failure injected."""
         if self.fail_checkout:
@@ -70,8 +72,10 @@ class FakeSupplier:
             "created_at": self.clock.now(),
             "status": "pending",
             "quantity": quantity,
+            "email": email,
         }
         self.created_checkout_count += 1
+        self.last_checkout_email = email
 
         return CheckoutRef(
             supplier_domain=domain,

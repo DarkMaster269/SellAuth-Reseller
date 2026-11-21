@@ -14,7 +14,7 @@ from resell.db import Database
 from resell.jobs import StubJobRunner
 from resell.orders import OrdersRepo
 from resell.states import OrderState
-from resell.webhook import compute_hmac
+from resell.webhook import FRIENDLY_DELIVERY_PLACEHOLDER, compute_hmac
 
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures" / "webhook_payloads"
 REAL_PAYLOAD_PATH = FIXTURES_DIR / "test_order.json"
@@ -96,15 +96,14 @@ def test_real_redacted_payload_parses_and_persists(
         },
     )
     assert resp.status_code == 200
-    res_data = resp.json()
-    assert res_data["status"] == "ok"
-    assert res_data["delivered"] == "RECEIVED"
+    assert resp.text == FRIENDLY_DELIVERY_PLACEHOLDER
 
     # 2. Assert order in SQLite matches real payload fields recorded in docs/findings.md
     order = repo.get_order_by_invoice(17506338)
     assert order is not None
     assert order.invoice_id == 17506338
     assert order.item_id == 16132365
+    assert order.invoice_item_id == 16132365
     assert order.product_id == 996063
     assert order.variant_id == 2092559
     assert order.quantity == 2
@@ -136,15 +135,67 @@ def test_real_payload_idempotent_duplicate_delivery(
     # Delivery 1
     resp1 = client.post("/api/v1/deliver", content=raw_payload, headers=headers)
     assert resp1.status_code == 200
+    assert resp1.text == FRIENDLY_DELIVERY_PLACEHOLDER
 
     # Delivery 2 (SellAuth retry)
     resp2 = client.post("/api/v1/deliver", content=raw_payload, headers=headers)
     assert resp2.status_code == 200
+    assert resp2.text == FRIENDLY_DELIVERY_PLACEHOLDER
 
     # Ensure still only 1 row in database
     all_orders = repo.get_all_orders()
     assert len(all_orders) == 1
     assert all_orders[0].invoice_id == 17506338
+    assert all_orders[0].invoice_item_id == 16132365
 
     # Ensure job runner was not submitted twice
     assert len(runner.submitted_order_ids) == 1
+
+
+def test_invoice_item_id_extracted_and_persisted(
+    test_env: tuple[TestClient, Database, OrdersRepo, StubJobRunner, str],
+) -> None:
+    """Ensure invoice_item_id is correctly extracted from item.id and saved to SQLite."""
+    client, _, repo, _, secret = test_env
+    raw_payload = REAL_PAYLOAD_PATH.read_bytes()
+    sig = compute_hmac(secret, raw_payload)
+
+    resp = client.post(
+        "/api/v1/deliver",
+        content=raw_payload,
+        headers={"Content-Type": "application/json", "X-Signature": sig},
+    )
+    assert resp.status_code == 200
+    assert resp.text == FRIENDLY_DELIVERY_PLACEHOLDER
+
+    order = repo.get_order_by_invoice(17506338)
+    assert order is not None
+    assert order.invoice_item_id == 16132365
+    assert order.item_id == 16132365
+
+
+def test_webhook_database_failure_returns_200_placeholder(
+    test_env: tuple[TestClient, Database, OrdersRepo, StubJobRunner, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If database raises OperationalError on write, webhook still returns 200 OK placeholder."""
+    import sqlite3
+
+    client, _, repo, _, secret = test_env
+    raw_payload = REAL_PAYLOAD_PATH.read_bytes()
+    sig = compute_hmac(secret, raw_payload)
+
+    def failing_create(*args: object, **kwargs: object) -> tuple[object, bool]:
+        raise sqlite3.OperationalError("no such table: orders")
+
+    monkeypatch.setattr(repo, "create_order_if_new", failing_create)
+
+    resp = client.post(
+        "/api/v1/deliver",
+        content=raw_payload,
+        headers={"Content-Type": "application/json", "X-Signature": sig},
+    )
+    # Must fail gracefully with 200 OK and friendly placeholder, never 500
+    assert resp.status_code == 200
+    assert resp.text == FRIENDLY_DELIVERY_PLACEHOLDER
+

@@ -240,6 +240,29 @@ def test_orders_to_resume(repo: OrdersRepo) -> None:
     o2, _ = repo.create_order_if_new(order_in2)
     o3, _ = repo.create_order_if_new(order_in3)
 
+    order_in4 = CreateOrderInput(
+        invoice_id=2004,
+        item_id=4,
+        product_id=1,
+        variant_id=1,
+        quantity=1,
+        email="d@test.com",
+        price_paid_usd=Decimal("1.00"),
+        currency="USD",
+    )
+    order_in5 = CreateOrderInput(
+        invoice_id=2005,
+        item_id=5,
+        product_id=1,
+        variant_id=1,
+        quantity=1,
+        email="e@test.com",
+        price_paid_usd=Decimal("1.00"),
+        currency="USD",
+    )
+    o4, _ = repo.create_order_if_new(order_in4)
+    o5, _ = repo.create_order_if_new(order_in5)
+
     # Deliver o2
     repo.transition(o2.id, OrderState.CHECKOUT_CREATED)
     repo.transition(o2.id, OrderState.PAID)
@@ -250,6 +273,58 @@ def test_orders_to_resume(repo: OrdersRepo) -> None:
     repo.transition(o3.id, OrderState.REFUND_NEEDED)
     repo.transition(o3.id, OrderState.REFUNDED)
 
+    # o4 is in refund_needed (must be excluded from resume)
+    repo.transition(o4.id, OrderState.REFUND_NEEDED)
+
+    # o5 is in checkout_created (must be included in resume)
+    repo.transition(o5.id, OrderState.CHECKOUT_CREATED)
+
     resumable = repo.orders_to_resume()
-    assert len(resumable) == 1
-    assert resumable[0].id == o1.id
+    resumable_ids = [o.id for o in resumable]
+    assert o1.id in resumable_ids  # RECEIVED
+    assert o5.id in resumable_ids  # CHECKOUT_CREATED
+    assert o2.id not in resumable_ids  # DELIVERED
+    assert o3.id not in resumable_ids  # REFUNDED
+    assert o4.id not in resumable_ids  # REFUND_NEEDED
+    assert len(resumable) == 2
+
+
+def test_auto_migration_on_startup_or_deleted_db(tmp_path: Path) -> None:
+    """If database file is deleted while running, connect() automatically recreates tables."""
+    db_path = tmp_path / "deleted_recreated.db"
+    database = Database(db_path, auto_migrate=True)
+    repo = OrdersRepo(database)
+
+    # 1. Insert an order to confirm tables exist
+    order_in = CreateOrderInput(
+        invoice_id=8881,
+        item_id=1,
+        product_id=1,
+        variant_id=1,
+        quantity=1,
+        email="test@example.com",
+        price_paid_usd=Decimal("1.00"),
+        currency="USD",
+    )
+    order1, created1 = repo.create_order_if_new(order_in)
+    assert created1 is True
+    assert order1.id is not None
+
+    # 2. Simulate user deleting the SQLite DB file entirely
+    if db_path.exists():
+        db_path.unlink()
+    # Also clean up WAL and SHM if present
+    wal = Path(f"{db_path}-wal")
+    if wal.exists():
+        wal.unlink()
+    shm = Path(f"{db_path}-shm")
+    if shm.exists():
+        shm.unlink()
+
+    assert not db_path.exists()
+
+    # 3. Next connection should auto-migrate without 'no such table: orders' OperationalError
+    order2, created2 = repo.create_order_if_new(order_in)
+    assert created2 is True
+    assert order2.id is not None
+

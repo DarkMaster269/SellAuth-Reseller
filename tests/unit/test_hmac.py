@@ -14,7 +14,7 @@ from resell.config import Settings
 from resell.db import Database
 from resell.jobs import StubJobRunner
 from resell.orders import OrdersRepo
-from resell.webhook import compute_hmac
+from resell.webhook import FRIENDLY_DELIVERY_PLACEHOLDER, compute_hmac
 
 
 @pytest.fixture
@@ -73,8 +73,7 @@ def test_valid_signature_accepted(test_setup: tuple[TestClient, str]) -> None:
         headers={"Content-Type": "application/json", "X-Signature": sig},
     )
     assert resp.status_code == 200
-    data = resp.json()
-    assert data["status"] == "ok"
+    assert resp.text == FRIENDLY_DELIVERY_PLACEHOLDER
 
 
 def test_valid_signature_with_sha256_prefix_accepted(test_setup: tuple[TestClient, str]) -> None:

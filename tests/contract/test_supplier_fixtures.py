@@ -10,8 +10,12 @@ FIXTURES_DIR = Path(__file__).parent.parent / "fixtures" / "supplier_pages"
 
 
 def test_all_supplier_fixtures_parse() -> None:
-    """Every .html fixture in supplier_pages directory must parse without error."""
-    html_files = [f for f in FIXTURES_DIR.glob("*.html") if f.is_file() and f.stat().st_size > 0]
+    """Every supplier product page .html fixture must parse variants without error."""
+    html_files = [
+        f
+        for f in FIXTURES_DIR.glob("*.html")
+        if f.is_file() and f.stat().st_size > 0 and not f.name.startswith("503")
+    ]
     assert len(html_files) >= 1, "At least one supplier page fixture must exist."
 
     for file_path in html_files:

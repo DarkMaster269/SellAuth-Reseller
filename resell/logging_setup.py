@@ -46,20 +46,37 @@ class RedactingFormatter(logging.Formatter):
 
 
 def setup_logging(level: int = logging.INFO) -> None:
-    """Configure root logger with the RedactingFormatter globally."""
+    """Configure root logger and Uvicorn loggers with RedactingFormatter globally."""
+    import sys
+
+    formatter = RedactingFormatter(
+        "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+
+    # 1. Configure root logger
     root_logger = logging.getLogger()
     root_logger.setLevel(level)
-
-    # Avoid duplicate handlers on re-import
     if not any(isinstance(h.formatter, RedactingFormatter) for h in root_logger.handlers):
-        handler = logging.StreamHandler()
-        handler.setFormatter(
-            RedactingFormatter(
-                "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-                datefmt="%Y-%m-%d %H:%M:%S",
-            )
-        )
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setFormatter(formatter)
         root_logger.addHandler(handler)
+
+    # 2. Configure resell application logger
+    resell_logger = logging.getLogger("resell")
+    resell_logger.setLevel(level)
+    if not any(isinstance(h.formatter, RedactingFormatter) for h in resell_logger.handlers):
+        resell_handler = logging.StreamHandler(sys.stdout)
+        resell_handler.setFormatter(formatter)
+        resell_logger.addHandler(resell_handler)
+        resell_logger.propagate = True
+
+    # 3. Configure uvicorn loggers to redact secrets
+    for logger_name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
+        u_logger = logging.getLogger(logger_name)
+        for h in u_logger.handlers:
+            if not isinstance(h.formatter, RedactingFormatter):
+                h.setFormatter(formatter)
 
 
 # Auto-configure on import

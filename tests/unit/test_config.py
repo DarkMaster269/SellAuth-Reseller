@@ -101,6 +101,14 @@ variants:
     assert var.min_margin_usd == Decimal("1.25")
     assert var.max_price_usd == Decimal("8.50")
 
+    # find_variant by our_variant_id (int and str)
+    assert mapping.find_variant(111) == var
+    assert mapping.find_variant("111") == var
+
+    # find_variant by supplier_variant_id
+    assert mapping.find_variant("sup_111") == var
+    assert mapping.find_variant("missing_id") is None
+
 
 def test_load_mapping_missing_file() -> None:
     """Missing mapping file must raise FileNotFoundError."""

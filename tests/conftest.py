@@ -57,7 +57,6 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
     )
     if is_sandboxed and pytest_socket is not None:
         # Allow loopback for Windows asyncio internal socketpair/pipe, but block all internet
-        pytest_socket.disable_socket(allow_unix_socket=True)
         pytest_socket.enable_socket()
         pytest_socket.socket_allow_hosts(["127.0.0.1", "localhost", "::1"])
 
@@ -66,3 +65,18 @@ def pytest_runtest_teardown(item: pytest.Item) -> None:
     """Re-enable sockets if disabled."""
     if pytest_socket is not None:
         pytest_socket.enable_socket()
+
+
+@pytest.fixture(autouse=True)
+def isolate_test_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ensure tests never hit real external webhooks or spend limits from .env."""
+    monkeypatch.setenv("DISCORD_WEBHOOK_ORDERS", "https://discord.com/api/webhooks/fake/orders")
+    monkeypatch.setenv(
+        "DISCORD_WEBHOOK_SUPPLIER", "https://discord.com/api/webhooks/fake/supplier"
+    )
+    monkeypatch.setenv(
+        "DISCORD_WEBHOOK_DELIVERED", "https://discord.com/api/webhooks/fake/delivered"
+    )
+    monkeypatch.setenv("DISCORD_WEBHOOK_ALERTS", "https://discord.com/api/webhooks/fake/alerts")
+    monkeypatch.setenv("ALERT_WEBHOOK_URL", "https://discord.com/api/webhooks/fake/alert")
+

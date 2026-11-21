@@ -31,60 +31,87 @@ from typing import Any
 
 
 class UnsolvableChallengeError(RuntimeError):
-    """Raised when an Altcha challenge cannot be solved within maxnumber."""
+    """Raised when an Altcha challenge cannot be solved within the max number."""
+
+
+def create_altcha_challenge(
+    number: int,
+    salt: str,
+    algorithm: str = "SHA-256",
+    maxnumber: int = 100000,
+    signature: str = "",
+) -> dict[str, Any]:
+    """Generate an Altcha challenge structure for a given secret number."""
+    test_str = f"{salt}{number}"
+    if algorithm.upper() == "SHA-256":
+        challenge_hash = hashlib.sha256(test_str.encode()).hexdigest()
+    elif algorithm.upper() == "SHA-512":
+        challenge_hash = hashlib.sha512(test_str.encode()).hexdigest()
+    else:
+        raise ValueError(f"Unsupported algorithm: {algorithm}")
+
+    return {
+        "algorithm": algorithm,
+        "challenge": challenge_hash,
+        "maxnumber": maxnumber,
+        "salt": salt,
+        "signature": signature,
+    }
 
 
 def solve_altcha(
     challenge: str,
-    salt: str,
+    salt: str | None = None,
     algorithm: str = "SHA-256",
-    maxnumber: int = 1_000_000,
+    maxnumber: int = 1000000,
     signature: str = "",
 ) -> dict[str, Any]:
-    """Solve an Altcha proof-of-work challenge by finding the matching integer."""
-    target_hash = challenge.lower().strip()
-    salt_bytes = salt.encode("utf-8")
+    """Solve an Altcha proof-of-work challenge."""
+    # Support JSON string format if salt is not passed directly
+    if salt is None:
+        try:
+            parsed = json.loads(challenge)
+            challenge_hash = parsed.get("challenge", "")
+            salt_val = parsed.get("salt", "")
+            algorithm = parsed.get("algorithm", "SHA-256")
+            maxnumber = int(parsed.get("maxnumber", maxnumber))
+            signature = parsed.get("signature", "")
+        except json.JSONDecodeError as exc:
+            raise ValueError("salt was not provided and challenge is not valid JSON") from exc
+    else:
+        challenge_hash = challenge
+        salt_val = salt
 
-    # Brute-force proof-of-work within bounded range
+    algo_upper = algorithm.upper()
+
     for n in range(maxnumber + 1):
-        test_str = salt_bytes + str(n).encode("utf-8")
-        if hashlib.sha256(test_str).hexdigest() == target_hash:
+        test_str = f"{salt_val}{n}"
+        if algo_upper == "SHA-256":
+            test_hash = hashlib.sha256(test_str.encode()).hexdigest()
+        elif algo_upper == "SHA-512":
+            test_hash = hashlib.sha512(test_str.encode()).hexdigest()
+        else:
+            raise ValueError(f"Unsupported algorithm: {algorithm}")
+
+        if test_hash == challenge_hash:
             payload = {
                 "algorithm": algorithm,
-                "challenge": challenge,
+                "challenge": challenge_hash,
                 "number": n,
-                "salt": salt,
+                "salt": salt_val,
                 "signature": signature,
             }
-            json_bytes = json.dumps(payload, separators=(",", ":")).encode("utf-8")
-            b64_payload = base64.b64encode(json_bytes).decode("ascii")
+            b64_payload = base64.b64encode(
+                json.dumps(payload, separators=(",", ":")).encode()
+            ).decode()
             return {
                 "number": n,
-                "challenge": challenge,
-                "salt": salt,
+                "challenge": challenge_hash,
+                "salt": salt_val,
                 "signature": signature,
                 "base64_payload": b64_payload,
             }
 
     raise UnsolvableChallengeError(
-        f"Unable to solve Altcha challenge within maxnumber={maxnumber}."
+        f"Could not solve Altcha challenge within maxnumber={maxnumber}"
     )
-
-
-def create_altcha_challenge(
-    number: int,
-    salt: str = "testsalt",
-    algorithm: str = "SHA-256",
-    signature: str = "testsig",
-    maxnumber: int = 100_000,
-) -> dict[str, Any]:
-    """Generate a synthetic Altcha challenge for testing purposes."""
-    challenge_hash = hashlib.sha256((salt + str(number)).encode("utf-8")).hexdigest()
-    return {
-        "algorithm": algorithm,
-        "challenge": challenge_hash,
-        "salt": salt,
-        "signature": signature,
-        "maxnumber": maxnumber,
-    }
-

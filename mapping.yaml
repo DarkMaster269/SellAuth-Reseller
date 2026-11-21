@@ -5,10 +5,20 @@ variants:
   - our_variant_id: 2092559
     our_product_id: 996063
     name: "Discord Nitro 3 Months"
-    supplier_domain: "vna.mysellauth.com"
-    supplier_product_slug: "vna-3m-nitro"
+    supplier_domain: "vnastore.digital"
+    supplier_product_slug: "3m-nitro-promos"
     supplier_variant_id: "variant_vna_nitro_3m"
-    min_margin_usd: "1.50"
-    max_price_usd: "10.00"
+    min_margin_usd: "0.20"
+    max_price_usd: "0.80"
     enabled: true
 
+  # THE NEW CHEAP MAPPING (Corrected to match the schema)
+  - our_variant_id: "2094141"
+    our_product_id: "996327"
+    name: "Cheap Test Item"
+    supplier_domain: "dnclub.shop"
+    supplier_product_slug: "fresh-ev-fa-custom-domain"
+    supplier_variant_id: "2069452  " # <--- See Step 1 below!
+    min_margin_usd: "0.01"
+    max_price_usd: "0.06"
+    enabled: true

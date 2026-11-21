@@ -48,10 +48,15 @@ wallets/
 *.db-wal
 *.db-shm
 *.sqlite
+*.sqlite*
 *.sqlite3
 *.sqlite3-journal
 *.sqlite3-wal
 *.sqlite3-shm
+
+# Operational lock files
+resell.killswitch
+*.killswitch
 
 # Private test fixtures and captured payloads
 tests/fixtures/private/

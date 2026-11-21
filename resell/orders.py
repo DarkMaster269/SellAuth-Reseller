@@ -32,10 +32,17 @@ class OrdersRepo:
 
     def _row_to_order(self, row: sqlite3.Row) -> Order:
         """Convert a database row into an Order domain model."""
+        keys = row.keys()
+        inv_item_id = (
+            row["invoice_item_id"]
+            if "invoice_item_id" in keys and row["invoice_item_id"] is not None
+            else row["item_id"]
+        )
         return Order(
             id=row["id"],
             invoice_id=row["invoice_id"],
             item_id=row["item_id"],
+            invoice_item_id=inv_item_id,
             product_id=row["product_id"],
             variant_id=row["variant_id"],
             quantity=row["quantity"],
@@ -69,6 +76,11 @@ class OrdersRepo:
     def create_order_if_new(self, input_data: CreateOrderInput) -> tuple[Order, bool]:
         """Create order idempotently. Returns (Order, created_flag)."""
         now_utc = datetime.datetime.now(datetime.UTC).isoformat()
+        inv_item_id = (
+            input_data.invoice_item_id
+            if input_data.invoice_item_id is not None
+            else input_data.item_id
+        )
 
         with self.db.connect() as conn:
             cursor = conn.cursor()
@@ -88,13 +100,14 @@ class OrdersRepo:
                 cursor.execute(
                     """
                     INSERT INTO orders (
-                        invoice_id, item_id, product_id, variant_id, quantity,
+                        invoice_id, item_id, invoice_item_id, product_id, variant_id, quantity,
                         email, price_paid_usd, currency, state, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                     """,
                     (
                         input_data.invoice_id,
                         input_data.item_id,
+                        inv_item_id,
                         input_data.product_id,
                         input_data.variant_id,
                         input_data.quantity,
@@ -358,7 +371,11 @@ class OrdersRepo:
 
     def orders_to_resume(self) -> list[Order]:
         """Fetch all active orders in non-terminal states."""
-        terminal_states = (OrderState.DELIVERED.value, OrderState.REFUNDED.value)
+        terminal_states = (
+            OrderState.DELIVERED.value,
+            OrderState.REFUNDED.value,
+            OrderState.REFUND_NEEDED.value,
+        )
         with self.db.connect() as conn:
             cursor = conn.cursor()
             cursor.execute(
@@ -372,3 +389,25 @@ class OrdersRepo:
             rows = cursor.fetchall()
             cursor.close()
             return [self._row_to_order(r) for r in rows]
+
+    def count_in_flight(self, variant_id: int) -> int:
+        """Return total item quantity of in-flight active orders for a store variant."""
+        in_flight_states = (
+            OrderState.RECEIVED.value,
+            OrderState.CHECKOUT_CREATED.value,
+            OrderState.PAID.value,
+            OrderState.DELAYED.value,
+            OrderState.FETCHED.value,
+        )
+        with self.db.connect() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                f"""
+                SELECT COALESCE(SUM(quantity), 0) as total_qty FROM orders
+                WHERE variant_id = ? AND state IN ({', '.join('?' for _ in in_flight_states)});
+                """,
+                (variant_id, *in_flight_states),
+            )
+            row = cursor.fetchone()
+            cursor.close()
+            return int(row["total_qty"]) if row and row["total_qty"] is not None else 0

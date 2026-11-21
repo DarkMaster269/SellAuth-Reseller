@@ -36,6 +36,17 @@ class MappingConfig(BaseModel):
                 return v
         return None
 
+    def find_variant(self, query: int | str) -> VariantMapping | None:
+        """Find mapped variant by store variant ID or supplier variant ID."""
+        query_str = str(query).strip()
+        for v in self.variants:
+            if (
+                str(v.our_variant_id).strip() == query_str
+                or str(v.supplier_variant_id).strip() == query_str
+            ):
+                return v
+        return None
+
 
 def load_mapping(path: Path | str = "mapping.yaml") -> MappingConfig:
     """Load and validate the variant-to-supplier mapping YAML file."""
@@ -83,8 +94,19 @@ class Settings(BaseSettings):
     ELECTRUM_RPC_USER: str = "electrum"
     ELECTRUM_RPC_PASSWORD: SecretStr = SecretStr("password")
 
-    # Alerts
+    # Supplier Checkout Settings (email used at supplier; protects buyer privacy)
+    SUPPLIER_EMAIL: str = "supplier_orders@example.com"
+
+    # Alerts and Discord Webhooks (ASCII only, minimalist format)
     ALERT_WEBHOOK_URL: SecretStr | None = None
+    DISCORD_WEBHOOK_ORDERS: SecretStr | None = None
+    DISCORD_WEBHOOK_SUPPLIER: SecretStr | None = None
+    DISCORD_WEBHOOK_DELIVERED: SecretStr | None = None
+    DISCORD_WEBHOOK_ALERTS: SecretStr | None = None
+    DISCORD_ADMIN_ROLE_ID: str | None = None
+
+    # Stock Sync Automation
+    STOCK_SYNC_INTERVAL_MINUTES: int = 5
 
 
 def load_settings(_env_file: str | Path | None = ".env") -> Settings:
